@@ -12,9 +12,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from image_lock import HELPER, images, inspect_image, require_local_engine
+
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL_HASH = "06cbc319b9114784d5c61bdce7c81a3b4a2457445f246f56bebcfb915f7d6eee"
-HELPER = "agentteams-evaluation/alpine:3ea06e4cb95e"
 
 def run(cmd, **opts):
     return subprocess.run(cmd, check=True, **opts)
@@ -34,18 +35,25 @@ def show_team(port, open_windows):
             sys.exit("团队已启动。Windows 浏览器未自动打开，请使用上方网址。")
 
 def prepare_images():
-    for line in (ROOT / "images.lock").read_text().splitlines():
-        tag, pinned, config = line.split()
-        actual = inspect("image", tag, "{{.Id}}")
-        if actual and actual != config and tag != "alpine:latest":
-            sys.exit("Local image conflicts with the pinned release: " + tag)
-        if actual != config and not inspect("image", config, "{{.Id}}"):
-            run(["docker", "pull", "--platform", "linux/amd64", pinned])
-        if inspect("image", config, "{{.Id}}") != config:
-            sys.exit("Pinned image config mismatch for " + tag)
-        alias = HELPER if tag == "alpine:latest" else tag
-        if inspect("image", alias, "{{.Id}}") != config:
-            run(["docker", "tag", config, alias])
+    for image in images():
+        destination = image.destination
+        current = inspect_image(destination)
+        if image.accepts(current):
+            continue
+        if current is not None:
+            sys.exit("Local image conflicts with the project tag: " + destination)
+
+        # Classic Docker can resolve the config ID, while the containerd image
+        # store resolves the imported manifest ID. Tag a verified reference.
+        sources = (image.tag, image.pinned, image.archive_manifest, image.config)
+        source = next((ref for ref in dict.fromkeys(sources) if image.accepts(inspect_image(ref))), None)
+        if source is None:
+            run(["docker", "pull", "--platform", "linux/amd64", image.pinned])
+            source = image.pinned
+            if not image.accepts(inspect_image(source)):
+                sys.exit("Pinned linux/amd64 image verification failed: " + image.tag)
+        run(["docker", "tag", source, destination])
+
 
 def fresh_settings():
     password = os.environ.get("TEAM_EVAL_PASSWORD") or getpass.getpass("三个评测账号的新密码（至少 12 位英文、数字、点、下划线或短横线）：")
@@ -71,7 +79,9 @@ def main():
     os.umask(0o077)
     if shutil.which("docker") is None:
         sys.exit("当前 WSL/Linux 内没有可用的 Docker CLI，请检查 Docker Desktop 的 WSL Integration。")
-    run(["docker", "info"], stdout=subprocess.DEVNULL)
+    require_local_engine()
+    if subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL).returncode:
+        sys.exit("当前账号无法访问 Docker。请确认服务已启动，并使用已获本机 Docker socket 权限的账号。")
     architecture = subprocess.check_output(["docker","info","--format","{{.OSType}}/{{.Architecture}}"],text=True).strip()
     if architecture not in ("linux/x86_64","linux/amd64"):
         sys.exit("需要 Linux x86_64 容器引擎，当前为 " + architecture)
@@ -103,7 +113,9 @@ def main():
         nets = subprocess.check_output(["docker","network","ls","--format","{{.Name}}"],text=True).splitlines()
         if any(x.startswith(prefix) for x in conflicts + vols + nets):
             sys.exit("此前缀已有 Docker 资源，请还原原数据目录或选新前缀。")
-        for n in range(port,port+5):
+        # Unified entry maps the gateway and the Manager console. The other
+        # fixed port variables belong to the non-unified upstream topology.
+        for n in (port, port + 3):
             with socket.socket() as probe:
                 try: probe.bind(("127.0.0.1",n))
                 except OSError: sys.exit("端口已占用：" + str(n))

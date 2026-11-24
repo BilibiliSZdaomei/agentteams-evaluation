@@ -6,13 +6,15 @@
 
 在不能直接拉取镜像的公司电脑上，先按 [离线依赖](OFFLINE.md) 导入五个镜像，再运行启动脚本。
 
+在已有业务的 Ubuntu 服务器上试用，请按 [Linux 服务器部署与堡垒机访问](LINUX.md) 上传、启动并打开工作台。
+
 ## 第一次启动
 
 1. 使用 x86_64 的 Windows 10/11（WSL2 Ubuntu + Docker Desktop 的 Linux 容器）或 Linux。Windows 请让 Ubuntu 成为默认 WSL 发行版，在 Docker Desktop 的 **Settings → Resources → WSL Integration** 启用该 Ubuntu；确认 Ubuntu 里能运行 `docker info`、`python3 --version`、`openssl version`、`curl --version` 和 `bash --version`。Linux 需要相同的命令及可通过本地 Unix socket 使用的 Docker Engine。Python 3.8 或更高版本。
 2. 下载并解压本仓。在 Windows 双击 **Start.cmd**，在 Linux 或 WSL 进入仓库后运行 **`bash start.sh`**。初次启动需要输入新密码及公司允许使用的 DeepSeek Key；终端隐藏输入字符。准备一把 Key 即可，计划员和物流员也能分别使用独立的 Key。
 3. 等终端显示“已验证团队 Active”。Windows 将打开上述网址。浏览器用户名直接填 `planning`、`logistics` 或 `admin`，输入首次设置的密码。对照两个账号时，可以同时使用 Chrome 普通窗口和无痕窗口，分别登录后进入同一团队。
 
-默认仅发布在本机回环地址，预留 TCP 18966–18970。请确保 Docker 能拉取杭州 Higress 公共镜像仓库和 Docker Hub 的镜像；如已导入 Release 中的离线镜像，启动器会复用本地匹配版本。Agent 发出模型请求需要能访问 `https://api.deepseek.com`。登录、建团队和基础检查本身不发送模型提示词。
+默认仅发布在本机回环地址，网页和 Manager 控制台分别使用 TCP 18966、18969。请确保 Docker 能拉取杭州 Higress 公共镜像仓库和 Docker Hub 的镜像；如已导入 Release 中的离线镜像，启动器会复用本地匹配版本。Agent 发出模型请求需要能访问 `https://api.deepseek.com`。登录、建团队和基础检查本身不发送模型提示词。
 
 | 账号 | 角色及可试内容 |
 | --- | --- |
@@ -33,7 +35,7 @@
 | 官方网站 Bash 安装器 | v1.2.8，SHA-256 `06cbc319b9114784d5c61bdce7c81a3b4a2457445f246f56bebcfb915f7d6eee` |
 | 卷初始化用 Alpine | amd64 固定镜像，启动器为它创建独立的本地标签 |
 
-运行的是上游发布的镜像。本仓保存配置、部署检查和上游安装器，不打包开发者的数据库、模型 Key 或账号。镜像的上游清单摘要和 amd64 镜像 ID 见 [images.lock](images.lock)。本仓校验原安装器后，只在本机私有执行副本里把两处 Alpine 辅助容器改为已锁定的本地标签，避免更改其他项目的 `alpine:latest`。镜像已按原标签导入 Docker 时无需重新下载。
+运行的是上游发布的镜像。本仓保存配置、部署检查和上游安装器，不打包开发者的数据库、模型 Key 或账号。上游清单摘要、amd64 配置摘要和离线归档在 Docker 29 容器镜像存储中的清单摘要见 [images.lock](images.lock)。本仓校验原安装器后，只在本机私有执行副本里把两处 Alpine 辅助容器改为已锁定的本地标签，避免更改其他项目的 `alpine:latest`。镜像已按原标签导入 Docker 时无需重新下载。
 
 [AgentTeams 上游项目](https://github.com/agentscope-ai/AgentTeams) · [上游安装器来源](https://github.com/agentteams-group/agentteams-group.github.io/blob/main/public/install.sh) · [安装器原许可证](vendor/LICENSE)
 
@@ -41,7 +43,7 @@
 
 - 重启电脑后，再次双击 **Start.cmd** 或运行 `bash start.sh`。脚本复用原数据卷，检查控制器、网关、Matrix 房间、Worker 进程和其控制器连接。若 Worker 曾提前退出，会等依赖启动后走原生重启接口。
 - 停止这套实例并保留数据，运行 `bash start.sh --stop`。再次运行启动命令恢复。
-- 全新独立部署请使用新电脑、VM 或新的前缀、数据目录和端口。首次启动前可设置 `TEAM_EVAL_PREFIX`（如 `trial-two-`）、`TEAM_EVAL_STATE`（无空格的 Linux 路径）、`TEAM_EVAL_PORT`（连续 5 个端口的首个）。后续恢复继续使用同一个数据目录。Windows 的 Start.cmd 也会把这三个 Windows 环境变量传给 WSL，按本次部署的实际端口打开浏览器。若公司禁用 WSL 调用 Windows 程序，请打开终端打印的网址。
+- 全新独立部署请使用新电脑、VM 或新的前缀、数据目录和端口。首次启动前可设置 `TEAM_EVAL_PREFIX`（如 `trial-two-`）、`TEAM_EVAL_STATE`（无空格的 Linux 路径）、`TEAM_EVAL_PORT`（网页端口，Manager 同时使用该端口加 3）。后续恢复继续使用同一个数据目录。Windows 的 Start.cmd 也会把这三个 Windows 环境变量传给 WSL，按本次部署的实际端口打开浏览器。若公司禁用 WSL 调用 Windows 程序，请打开终端打印的网址。
 - 默认应用状态在当前 Linux 用户的 `~/.local/share/agentteams-evaluation/`，包括权限受限的设置、上游私有日志、工作空间及专门的共享目录。不要将该目录提交到 Git 或分发。账号与聊天记录存于以 `workeval-agentteams-` 为前缀的 Docker 资源。要保留历史搬迁，先按上面的命令停止本实例，使用你们的 Docker/VM 备份工具保存该数据目录及所有此前缀的数据卷（含平台数据、Dashboard 数据及各运行时认证卷）。在新的隔离 VM 上先恢复同名卷与原数据目录，再装相同版本并启动。本仓提供全新初始化；历史数据迁移须在目标机验证。
 - 官方自托管控制器需要挂载本机 Docker socket 来创建和维护 Worker；请选用公司允许用于评测的独立 Docker 环境。默认只把本项目的 **shared** 子目录作为 Manager 的主机共享目录。
 
